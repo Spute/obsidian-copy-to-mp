@@ -1,7 +1,7 @@
 {
-	"id": "copy-document-as-html",
-	"name": "Copy document as HTML",
-	"version": "0.8.1",
+	"id": "copy-document-to-mp",
+	"name": "复制文档到微信公众号",
+	"version": "0.0.1",
 	"minAppVersion": "1.6.3",
 	"description": "Copy the current document to clipboard as HTML, including images, diagrams etc...",
 	"author": "mvdkwast",
