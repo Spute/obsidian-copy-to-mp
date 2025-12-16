@@ -1,10 +1,10 @@
 {
 	"id": "copy-document-to-mp",
 	"name": "复制文档到微信公众号",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"minAppVersion": "1.6.3",
-	"description": "Copy the current document to clipboard as HTML, including images, diagrams etc...",
-	"author": "mvdkwast",
-	"authorUrl": "https://github.com/mvdkwast",
+	"description": "将当前文档复制到微信公众号，包括图片、图表等。",
+	"author": "feiyu",
+	"authorUrl": "https://github.com/Spute",
 	"isDesktopOnly": true
 }

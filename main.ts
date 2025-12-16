@@ -1,25 +1,25 @@
 import {
-	App,
-	arrayBufferToBase64,
-	Component,
-	FileSystemAdapter,
-	MarkdownRenderer,
-	MarkdownView,
-	Modal,
-	Notice,
-	Plugin,
-	PluginSettingTab,
-	Setting,
-	TAbstractFile,
-	TFile
-} from 'obsidian';
-
+	App,                  // Obsidian 应用实例，可访问 vault、workspace、插件管理器等全局对象
+	arrayBufferToBase64,  // 工具函数，将 ArrayBuffer 转为 Base64，常用于图片或二进制数据处理
+	Component,            // UI 组件基类，可管理事件生命周期等
+	FileSystemAdapter,    // 文件系统适配器，用于读写本地或远程文件
+	MarkdownRenderer,     // Markdown 渲染器，将 Markdown 内容渲染为 HTML
+	MarkdownView,         // Markdown 窗口视图，表示当前打开的编辑器
+	Modal,                // 弹窗类，用于创建自定义模态窗口
+	Notice,               // 系统通知类，在屏幕右下角显示提示信息
+	Plugin,               // 插件基类，所有 Obsidian 插件必须继承它
+	PluginSettingTab,     // 插件设置面板类，用于创建插件设置界面
+	Setting,              // 设置项类，用于在设置面板中添加单个控件（开关、输入框等）
+	TAbstractFile,        // 抽象文件类，代表文件系统中的任意文件或文件夹
+	TFile                 // 文件类，继承自 TAbstractFile，表示具体文件（如 Markdown 文件）
+  } from 'obsidian';
+  
 /*
- * Generic lib functions
+ * 通用库函数
  */
 
 /**
- * Like Promise.all(), but with a callback to indicate progress. Graciously lifted from
+ * 类似 Promise.all()，但带有进度回调。感谢来自
  * https://stackoverflow.com/a/42342373/1341132
  */
 function allWithProgress(promises: Promise<never>[], callback: (percentCompleted: number) => void) {
@@ -35,14 +35,14 @@ function allWithProgress(promises: Promise<never>[], callback: (percentCompleted
 }
 
 /**
- * Do nothing for a while
+ * 延迟一段时间
  */
 async function delay(milliseconds: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
 /**
- * Static assets
+ * 静态资源
  */
 
 const DEFAULT_STYLESHEET =
@@ -202,7 +202,7 @@ ul.contains-task-list li input[type="checkbox"] {
 }
 `;
 
-// Thank you again Olivier Balfour !
+// 再次感谢 Olivier Balfour！
 const MERMAID_STYLESHEET = `
 :root {
   --default-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Microsoft YaHei Light", sans-serif;
@@ -244,57 +244,64 @@ const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html>
 
 
 /*
- * Plugin code
+ * 插件代码
  */
 
-/** Don't allow multiple copy processes to run at the same time */
+/** Don't allow multiple copy processes to run at the same time - 防止多个复制进程同时运行 */
 let copyIsRunning = false;
 
-/** true while a block is being processed by MarkDownPostProcessor instances */
+/** true while a block is being processed by MarkDownPostProcessor instances - 当块正在被 Markdown 后处理器处理时为 true */
 let ppIsProcessing = false;
 
-/** moment at which the last block finished post-processing */
+/** moment at which the last block finished post-processing - 最后一个块完成处理后处理的时间 */
 let ppLastBlockDate = Date.now();
 
 
+/**
+ * 脚注处理方式枚举
+ */
 enum FootnoteHandling {
-	/** Remove references and links */
+	/** 移除所有引用和链接 */
 	REMOVE_ALL,
 
-	/** Reference links to footnote using a unique id */
+	/** 保留链接（使用唯一ID链接到脚注） */
 	LEAVE_LINK,
 
-	/** Links are removed from reference and back-link from footnote */
+	/** 移除链接（从引用和脚注中移除链接，只显示文本） */
 	REMOVE_LINK,
 
-	/** Footnote is moved to title attribute */
+	/** 将脚注移动到 title 属性中（暂不支持） */
 	TITLE_ATTRIBUTE
 }
 
+/**
+ * 内部链接处理方式枚举
+ */
 enum InternalLinkHandling {
 	/**
-	 * remove link and only display link text
+	 * 转换为文本（移除链接，只显示链接文本）
 	 */
 	CONVERT_TO_TEXT,
 
 	/**
-	 * convert to an obsidian:// link to open the file or tag in Obsidian
+	 * 转换为 obsidian:// 链接（在 Obsidian 中打开文件或标签）
 	 */
 	CONVERT_TO_OBSIDIAN_URI,
 
 	/**
-	 * Keep link, but convert extension to .html
+	 * 链接到 HTML（保留链接，但将扩展名转换为 .html）
 	 */
 	LINK_TO_HTML,
 
 	/**
-	 * Keep generated link
+	 * 保持原样（保留生成的链接）
 	 */
 	LEAVE_AS_IS
 }
 
 /**
- * Options for DocumentRenderer
+ * DocumentRenderer 的选项类型
+ * 用于配置文档渲染器的行为
  */
 type DocumentRendererOptions = {
 	convertSvgToBitmap: boolean,
@@ -321,16 +328,17 @@ const documentRendererDefaults: DocumentRendererOptions = {
 };
 
 /**
- * Render markdown to DOM, with some clean-up and embed images as data uris.
+ * 将 Markdown 渲染为 DOM，并进行清理和将图片嵌入为 data URI。
+ * 这个是md转成html的核心逻辑
  */
 class DocumentRenderer {
 	private modal: CopyingToHtmlModal;
 	private view: Component;
 
-	// time required after last block was rendered before we decide that rendering a view is completed
+	// 在决定视图渲染完成之前，最后一个块渲染后需要等待的时间
 	private optionRenderSettlingDelay: number = 100;
 
-	// only those which are different from image/${extension}
+	// 仅包含与 image/${extension} 不同的 MIME 类型映射
 	private readonly mimeMap = new Map([
 		['svg', 'image/svg+xml'],
 		['jpg', 'image/jpeg'],
@@ -357,7 +365,7 @@ class DocumentRenderer {
 	}
 
 	/**
-	 * Render document into detached HTMLElement
+	 * 将文档渲染为分离的 HTML Element
 	 */
 	public async renderDocument(markdown: string, path: string): Promise<HTMLElement> {
 		this.modal = new CopyingToHtmlModal(this.app);
@@ -372,7 +380,15 @@ class DocumentRenderer {
 	}
 
 	/**
-	 * Render current view into HTMLElement, expanding embedded links
+	 * 将当前视图渲染为 HTMLElement，展开嵌入的链接
+	 * 
+	 * @param markdown 要渲染的 Markdown 文本
+	 * @param path 当前 Markdown 文件路径，用于处理内部链接、附件等
+	 * @returns Promise<HTMLElement> 渲染后的 HTML 元素
+	 * 
+	 * 注意：
+	 * - 这是一个私有方法（private），只能在类内部调用
+	 * - 使用 async/await 处理异步渲染
 	 */
 	private async renderMarkdown(markdown: string, path: string): Promise<HTMLElement> {
 		const processedMarkdown = this.preprocessMarkdown(markdown);
@@ -392,12 +408,13 @@ class DocumentRenderer {
 		return result;
 	}
 
+
+
 	/**
-	 * Some plugins may expose components that rely on onload() to be called which isn't the case due to the
-	 * way we render the markdown. We need to call onload() on all components to ensure they are properly loaded.
-	 * Since this is a bit of a hack (we need to access Obsidian internals), we limit this to components of which
-	 * we know that they don't get rendered correctly otherwise.
-	 * We attempt to make sure that if the Obsidian internals change, this will fail gracefully.
+	 * 一些插件可能暴露依赖于 onload() 被调用的组件，但由于我们渲染 Markdown 的方式，这不会发生。
+	 * 我们需要在所有组件上调用 onload() 以确保它们正确加载。
+	 * 由于这有点 hack（我们需要访问 Obsidian 内部），我们将其限制在我们知道否则无法正确渲染的组件。
+	 * 我们尝试确保如果 Obsidian 内部发生变化，这将优雅地失败。
 	 */
 	private async loadComponents(view: Component) {
 		type InternalComponent = Component & {
@@ -407,13 +424,13 @@ class DocumentRenderer {
 
 		const internalView = view as InternalComponent;
 
-		// recursively call onload() on all children, depth-first
+		// 递归调用所有子组件的 onload()，深度优先
 		const loadChildren = async (
 			component: Component,
 			visited: Set<Component> = new Set()
 		): Promise<void> => {
 			if (visited.has(component)) {
-				return;  // Skip if already visited
+				return;  // 如果已经访问过，跳过
 			}
 
 			visited.add(component);
@@ -427,7 +444,7 @@ class DocumentRenderer {
 			}
 
 			try {
-				// relies on the Sheet plugin (advanced-table-xt) not to be minified
+				// 依赖于 Sheet 插件（advanced-table-xt）没有被压缩
 				if (component?.constructor?.name === 'SheetElement') {
 					await component.onload();
 				}
@@ -450,21 +467,18 @@ class DocumentRenderer {
 	}
 
 	/**
-	 * Wait until the view has finished rendering
+	 * 等待视图完成渲染
 	 *
-	 * Beware, this is a dirty hack...
+	 * 注意，这是一个肮脏的 hack...
 	 *
-	 * We have no reliable way to know if the document finished rendering. For instance dataviews or task blocks
-	 * may not have been post processed.
-	 * MarkdownPostProcessors are called on all the "blocks" in the HTML view. So we register one post-processor
-	 * with high-priority (low-number to mark the block as being processed), and another one with low-priority that
-	 * runs after all other post-processors.
-	 * Now if we see that no blocks are being post-processed, it can mean 2 things :
-	 *  - either we are between blocks
-	 *  - or we finished rendering the view
-	 * On the premise that the time that elapses between the post-processing of consecutive blocks is always very
-	 * short (just iteration, no work is done), we conclude that the render is finished if no block has been
-	 * rendered for enough time.
+	 * 我们没有可靠的方法知道文档是否已完成渲染。例如，dataviews 或任务块可能尚未进行后处理。
+	 * MarkdownPostProcessors 在 HTML 视图中的所有"块"上被调用。因此我们注册一个高优先级（低数字以标记块正在处理）的后处理器，
+	 * 和另一个在所有其他后处理器之后运行的低优先级后处理器。
+	 * 现在如果我们看到没有块正在被后处理，这可能意味着两件事：
+	 *  - 要么我们处于块之间
+	 *  - 要么我们完成了视图渲染
+	 * 基于连续块后处理之间经过的时间总是非常短（只是迭代，没有工作完成）的前提，
+	 * 我们得出结论：如果没有块在足够长的时间内被渲染，则渲染已完成。
 	 */
 	private async untilRendered() {
 		while (ppIsProcessing || Date.now() - ppLastBlockDate < this.optionRenderSettlingDelay) {
@@ -476,10 +490,10 @@ class DocumentRenderer {
 	}
 
 	/**
-	 * Transform rendered markdown to clean it up and embed images
+	 * 转换渲染的 Markdown 以清理并嵌入图片
 	 */
 	private async transformHTML(element: HTMLElement): Promise<HTMLElement> {
-		// Remove styling which forces the preview to fill the window vertically
+		// 移除强制预览垂直填充窗口的样式
 		// @ts-ignore
 		const node: HTMLElement = element.cloneNode(true);
 		node.removeAttribute('style');
@@ -594,7 +608,7 @@ class DocumentRenderer {
 			.forEach(node => node.remove());
 	}
 
-	/** Remove counters added by Strange New Worlds plugin (https://github.com/TfTHacker/obsidian42-strange-new-worlds) */
+	/** 移除由 Strange New Worlds 插件添加的计数器 (https://github.com/TfTHacker/obsidian42-strange-new-worlds) */
 	private removeStrangeNewWorldsLinks(node: HTMLElement) {
 		node.querySelectorAll('.snw-reference')
 			.forEach(node => node.remove());
@@ -665,27 +679,27 @@ class DocumentRenderer {
 			.forEach(link => {
 				const text = link.getText();
 				if (text === '↩︎') {
-					// remove back-link
+					// 移除返回链接
 					link.parentNode!.removeChild(link);
 				} else {
-					// remove from reference
+					// 从引用中移除
 					const span = link.parentNode!.createEl('span', {text: link.getText(), cls: 'footnote-link'})
 					link.parentNode!.replaceChild(span, link);
 				}
 			});
 	}
 
-	/** Replace all images sources with a data-uri */
+	/** 将所有图片源替换为 data-uri */
 	private async embedImages(node: HTMLElement): Promise<HTMLElement> {
 		const promises: Promise<void>[] = [];
 
-		// Replace all image sources
+		// 替换所有图片源
 		node.querySelectorAll('img')
 			.forEach(img => {
 				if (img.src) {
 					if (img.src.startsWith('data:image/svg+xml') && this.options.convertSvgToBitmap) {
-						// image is an SVG, encoded as a data uri. This is the case with Excalidraw for instance.
-						// Convert it to bitmap
+						// 图片是 SVG，编码为 data URI。例如 Excalidraw 就是这种情况。
+						// 将其转换为位图
 						promises.push(this.replaceImageSource(img));
 						return;
 					}
@@ -693,15 +707,15 @@ class DocumentRenderer {
 					if (!this.options.embedExternalLinks) {
 						const [scheme] = img.src.split(':', 1);
 						if (this.externalSchemes.includes(scheme.toLowerCase())) {
-							// don't touch external images
+							// 不处理外部图片
 							return;
 						} else {
-							// not an external image, continue processing below
+							// 不是外部图片，继续下面的处理
 						}
 					}
 
 					if (!img.src.startsWith('data:')) {
-						// render bitmaps, except if already as data-uri
+						// 渲染位图，除非已经是 data-uri
 						promises.push(this.replaceImageSource(img));
 						return;
 					}
@@ -856,7 +870,7 @@ class DocumentRenderer {
 }
 
 /**
- * Modal to show progress during conversion
+ * 在转换过程中显示进度的模态框
  */
 class CopyingToHtmlModal extends Modal {
 	constructor(app: App) {
@@ -883,7 +897,7 @@ class CopyingToHtmlModal extends Modal {
 }
 
 /**
- * Settings dialog
+ * 设置对话框
  */
 class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 	constructor(app: App, private plugin: CopyDocumentAsHTMLPlugin) {
@@ -891,7 +905,7 @@ class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	// Thank you, Obsidian Tasks !
+	// 感谢 Obsidian Tasks 插件！
 	private static createFragmentWithHTML = (html: string) =>
 		createFragment((documentFragment) => (documentFragment.createDiv().innerHTML = html));
 
@@ -1143,55 +1157,59 @@ Note that the template is not used if the "Copy HTML fragment only" setting is e
 	}
 }
 
+/**
+ * 插件设置类型定义
+ * 包含了所有用户可配置的选项
+ */
 type CopyDocumentAsHTMLSettings = {
-	/** Remove front-matter */
+	/** 是否移除 front-matter（文档开头的 YAML 元数据部分） */
 	removeFrontMatter: boolean;
 
-	/** If set svg are converted to bitmap */
+	/** 是否将 SVG 转换为位图（提高兼容性，例如在 Gmail 中） */
 	convertSvgToBitmap: boolean;
 
-	/** Render code elements as tables */
+	/** 是否将代码块渲染为表格（使粘贴到 Google Docs 中更美观） */
 	formatCodeWithTables: boolean;
 
-	/** Render callouts as tables */
+	/** 是否将 callouts（提示框）渲染为表格（使粘贴到 Google Docs 中更美观） */
 	formatCalloutsWithTables: boolean;
 
-	/** Embed external links (load them and embed their content) */
+	/** 是否嵌入外部链接（下载并嵌入其内容） */
 	embedExternalLinks: boolean;
 
-	/** Remove dataview meta-data lines (format : `some-tag:: value` */
+	/** 是否移除 dataview 元数据行（格式：`some-tag:: value`） */
 	removeDataviewMetadataLines: boolean;
 
-	/** How are foot-notes displayed ? */
+	/** 脚注处理方式 */
 	footnoteHandling: FootnoteHandling;
 
-	/** How are internal links handled ? */
+	/** 内部链接处理方式 */
 	internalLinkHandling: InternalLinkHandling;
 
-	/** remember if the stylesheet was default or custom */
+	/** 是否使用自定义样式表 */
 	useCustomStylesheet: boolean;
 
 	/**
-	 * remember if the HTML wrapper was default or custom
+	 * 是否使用自定义 HTML 模板
 	 */
 	useCustomHtmlTemplate: boolean;
 
-	/** Style-sheet */
+	/** 样式表内容 */
 	styleSheet: string;
 
 	/**
-	 * HTML wrapper
+	 * HTML 模板内容
 	 */
 	htmlTemplate: string;
 
-	/** Only generate the HTML body, don't include the <head> section */
+	/** 是否只生成 HTML 片段（不包含 <head> 部分） */
 	bareHtmlOnly: boolean;
 
-	/** Include filename in copy. Only when entire document is copied */
+	/** 是否在复制时包含文件名作为标题（仅当复制整个文档时生效） */
 	fileNameAsHeader: boolean;
 
 	/**
-	 * Don't replace image links with data: uris. No idea why you would want this, but here you go.
+	 * 是否禁用图片嵌入（不推荐，会留下损坏的链接）
 	 */
 	disableImageEmbedding: boolean;
 }
@@ -1214,12 +1232,24 @@ const DEFAULT_SETTINGS: CopyDocumentAsHTMLSettings = {
 	disableImageEmbedding: false,
 }
 
+/**
+ * 这是整个插件的“根组件”，负责控制插件的生命周期与所有功能注册。
+ */
 export default class CopyDocumentAsHTMLPlugin extends Plugin {
 	settings: CopyDocumentAsHTMLSettings;
 
+	/**
+	 * 插件加载时的初始化方法
+	 * 1. 加载设置
+	 * 2. 注册三个复制命令
+	 * 3. 注册 Markdown 后处理器来跟踪渲染进度
+	 * 4. 添加设置标签页
+	 * 5. 设置编辑器菜单项
+	 */
 	async onload() {
 		await this.loadSettings();
 
+		// 注册智能复制命令：根据是否有选择内容决定复制整个文档还是选择部分
 		this.addCommand({
 			id: 'smart-copy-as-html',
 			name: 'Copy selection or document to clipboard',
@@ -1227,41 +1257,48 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 				view => this.copyFromView(view, view.editor.somethingSelected()))
 		})
 
+		// 注册复制整个文档命令
 		this.addCommand({
 			id: 'copy-as-html',
 			name: 'Copy entire document to clipboard',
 			checkCallback: this.buildCheckCallback(view => this.copyFromView(view, false))
 		});
 
+		// 注册复制选择内容命令
 		this.addCommand({
 			id: 'copy-selection-as-html',
 			name: 'Copy current selection to clipboard',
 			checkCallback: this.buildCheckCallback(view => this.copyFromView(view, true))
 		});
 
-		// Register post-processors that keep track of the blocks being rendered. For explanation,
-		// @see DocumentRenderer#untilRendered()
-
+		// 注册后处理器来跟踪块渲染进度。详细解释见 DocumentRenderer#untilRendered()
+		// 这些后处理器用于检测 Markdown 渲染何时完成
 		const beforeAllPostProcessor = this.registerMarkdownPostProcessor(async () => {
-			ppIsProcessing = true;
+			ppIsProcessing = true; // 标记正在处理中
 		});
-		beforeAllPostProcessor.sortOrder = -10000;
+		beforeAllPostProcessor.sortOrder = -10000; // 高优先级，最先执行
 
 		const afterAllPostProcessor = this.registerMarkdownPostProcessor(async () => {
-			ppLastBlockDate = Date.now();
-			ppIsProcessing = false;
+			ppLastBlockDate = Date.now(); // 更新最后处理时间
+			ppIsProcessing = false; // 标记处理完成
 		});
-		afterAllPostProcessor.sortOrder = 10000;
+		afterAllPostProcessor.sortOrder = 10000; // 低优先级，最后执行
 
-		// Register UI elements
+		// 注册 UI 元素
 		this.addSettingTab(new CopyDocumentAsHTMLSettingsTab(this.app, this));
 		this.setupEditorMenuEntry();
 	}
 
+	/**
+	 * 加载插件设置
+	 * 1. 从存储中读取设置，与默认设置合并
+	 * 2. 如果用户没有使用自定义样式表，重置为默认样式表
+	 * 3. 如果用户没有使用自定义 HTML 模板，重置为默认模板
+	 */
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
-		// reload it so we may update it in a new release
+		// 重新加载以便在新版本中更新
 		if (!this.settings.useCustomStylesheet) {
 			this.settings.styleSheet = DEFAULT_STYLESHEET;
 		}
@@ -1271,23 +1308,36 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * 保存插件设置到存储
+	 */
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 
+	/**
+	 * 构建命令检查回调函数
+	 * Obsidian 命令系统使用此函数来检查命令是否可用
+	 * @param action 实际执行的操作函数
+	 * @returns 返回一个检查回调函数
+	 */
 	private buildCheckCallback(action: (activeView: MarkdownView) => void) {
 		return (checking: boolean): boolean => {
+			// 检查是否已经有复制操作在进行中
 			if (copyIsRunning) {
 				console.log('Document is already being copied');
 				return false;
 			}
 
+			// 获取当前活动的 Markdown 视图
 			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
 			if (!activeView) {
 				console.log('Nothing to copy: No active markdown view');
 				return false;
 			}
 
+			// 如果 checking 为 true，表示只是检查命令是否可用
+			// 如果 checking 为 false，表示实际执行命令
 			if (!checking) {
 				action(activeView);
 			}
@@ -1296,6 +1346,11 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * 从当前活动视图复制内容
+	 * @param activeView 当前活动的 Markdown 视图
+	 * @param onlySelected 是否只复制选中的内容（true=只复制选中内容，false=复制整个文档）
+	 */
 	private async copyFromView(activeView: MarkdownView, onlySelected: boolean) {
 		if (!activeView.editor) {
 			console.error('No editor in active view, nothing to copy');
@@ -1303,57 +1358,79 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 
 		if (!activeView.file) {
-			// should not happen if we have an editor in the active view ?
+			// 如果视图中有编辑器，通常应该有文件，但这里做安全检查
 			console.error('No file in active view, nothing to copy');
 			return;
 		}
 
+		// 根据 onlySelected 参数决定复制选中内容还是整个文档
 		const markdown = onlySelected ? activeView.editor.getSelection() : activeView.data;
 
 		const path = activeView.file.path;
 		const name = activeView.file.name;
+		// 调用实际复制方法，isFullDocument = !onlySelected
 		return this.doCopy(markdown, path, name, !onlySelected);
 	}
 
+	/**
+	 * 从文件复制内容（用于文件菜单中的复制操作）
+	 * @param file 要复制的文件
+	 */
 	private async copyFromFile(file: TAbstractFile) {
+		// 检查是否是文件（不是文件夹）
 		if (!(file instanceof TFile)) {
 			console.log(`cannot copy folder to HTML: ${file.path}`);
 			return;
 		}
 
+		// 检查文件扩展名是否为 .md
 		if (file.extension.toLowerCase() !== 'md') {
 			console.log(`cannot only copy .md files to HTML: ${file.path}`);
 			return;
 		}
 
+		// 读取文件内容并复制
 		const markdown = await file.vault.cachedRead(file);
 		return this.doCopy(markdown, file.path, file.name, true);
 	}
 
+	/**
+	 * 实际执行复制操作的核心方法
+	 * @param markdown Markdown 内容
+	 * @param path 文件路径
+	 * @param name 文件名
+	 * @param isFullDocument 是否是完整文档（true=完整文档，false=部分内容）
+	 */
 	private async doCopy(markdown: string, path: string, name: string, isFullDocument: boolean) {
 		console.log(`Copying "${path}" to clipboard...`);
-		const title = name.replace(/\.md$/i, '');
+		const title = name.replace(/\.md$/i, ''); // 移除 .md 扩展名作为标题
 
+		// 创建文档渲染器，传入当前应用实例和设置
 		const copier = new DocumentRenderer(this.app, this.settings);
 
 		try {
-			copyIsRunning = true;
+			copyIsRunning = true; // 标记复制操作正在进行
 
+			// 重置后处理器状态
 			ppLastBlockDate = Date.now();
 			ppIsProcessing = true;
 
+			// 渲染 Markdown 为 HTML
 			const htmlBody = await copier.renderDocument(markdown, path);
 
+			// 如果设置中要求添加文件名作为标题，并且是完整文档
 			if (this.settings.fileNameAsHeader && isFullDocument) {
 				const h1 = htmlBody.createEl('h1');
 				h1.innerHTML = title;
 				htmlBody.insertBefore(h1, htmlBody.firstChild);
 			}
 
+			// 根据设置决定生成完整的 HTML 文档还是仅 HTML 片段
 			const htmlDocument = this.settings.bareHtmlOnly
-				? htmlBody.outerHTML
-				: this.expandHtmlTemplate(htmlBody.outerHTML, title);
+				? htmlBody.outerHTML  // 仅 HTML 片段
+				: this.expandHtmlTemplate(htmlBody.outerHTML, title); // 完整的 HTML 文档
 
+			// 创建剪贴板项，同时包含 HTML 和纯文本格式
 			const data =
 				new ClipboardItem({
 					"text/html": new Blob([htmlDocument], {
@@ -1365,6 +1442,7 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 					}),
 				});
 
+			// 写入剪贴板
 			await navigator.clipboard.write([data]);
 			console.log(`Copied to clipboard as HTML`);
 			new Notice(`Copied to clipboard as HTML`)
@@ -1372,31 +1450,42 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 			new Notice(`copy failed: ${error}`);
 			console.error('copy failed', error);
 		} finally {
-			copyIsRunning = false;
+			copyIsRunning = false; // 无论成功失败，都标记复制操作结束
 		}
 	}
 
+	/**
+	 * 扩展 HTML 模板，将占位符替换为实际内容
+	 * @param html HTML 内容
+	 * @param title 文档标题
+	 * @returns 完整的 HTML 文档字符串
+	 */
 	private expandHtmlTemplate(html: string, title: string) {
+		// 根据设置决定使用自定义模板还是默认模板
 		const template = this.settings.useCustomHtmlTemplate
 			? this.settings.htmlTemplate
 			: DEFAULT_HTML_TEMPLATE;
 
+		// 替换模板中的占位符
 		return template
-			.replace('${title}', title)
-			.replace('${body}', html)
-			.replace('${stylesheet}', this.settings.styleSheet)
-			.replace('${MERMAID_STYLESHEET}', MERMAID_STYLESHEET);
+			.replace('${title}', title)  // 文档标题
+			.replace('${body}', html)    // HTML 内容
+			.replace('${stylesheet}', this.settings.styleSheet)  // 样式表
+			.replace('${MERMAID_STYLESHEET}', MERMAID_STYLESHEET);  // Mermaid 图表样式
 	}
 
+	/**
+	 * 设置编辑器菜单项（在文件右键菜单中添加"Copy as HTML"选项）
+	 */
 	private setupEditorMenuEntry() {
 		this.registerEvent(
 			this.app.workspace.on("file-menu", (menu, file, view) => {
 				menu.addItem((item) => {
 					item
-						.setTitle("Copy as HTML")
-						.setIcon("clipboard-copy")
+						.setTitle("Copy as HTML")  // 菜单项标题
+						.setIcon("clipboard-copy")  // 菜单项图标
 						.onClick(async () => {
-							return this.copyFromFile(file);
+							return this.copyFromFile(file);  // 点击时调用复制方法
 						});
 				});
 			})

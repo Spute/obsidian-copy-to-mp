@@ -66,6 +66,38 @@
 请参阅 [Obsidian 示例插件](https://github.com/obsidianmd/obsidian-sample-plugin)。
 官方文档：https://docs.obsidian.md/Plugins/Getting+started/Build+a+plugin
 
+```
+npm run dev
+```
+
+
+### 项目目录结构
+
+```
+obsidian-copy-as-html/
+├── .github/                    # GitHub 相关文件
+│   └── workflows/              # CI/CD 工作流配置
+├── node_modules/               # 依赖包
+├── .editorconfig               # 编辑器配置
+├── .eslintignore               # ESLint 忽略文件配置
+├── .eslintrc                   # ESLint 代码检查配置
+├── .gitignore                  # Git 忽略文件配置
+├── .npmrc                      # npm 配置
+├── esbuild.config.mjs          # esbuild 构建配置
+├── LICENSE                     # 许可证文件
+├── main.js                     # 编译后的主插件文件
+├── main.ts                     # 主 TypeScript 源代码
+├── manifest.json               # Obsidian 插件清单文件
+├── package.json                # npm 包配置
+├── package-lock.json           # npm 依赖锁定文件
+├── pnpm-lock.yaml              # pnpm 依赖锁定文件
+├── README_zh.md                # 中文版 README (此文件)
+├── styles.css                  # 插件样式文件
+├── tsconfig.json               # TypeScript 配置
+├── version-bump.mjs            # 版本更新脚本
+└── versions.json               # 版本历史记录
+```
+
 
 ## 致谢
 
