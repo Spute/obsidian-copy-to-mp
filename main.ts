@@ -409,59 +409,10 @@ class DocumentRenderer {
 
 		const result = wrapper.cloneNode(true) as HTMLElement;
 
-		// 简化代码块样式
-		this.simplifyCodeBlocks(result);
-		// console.log('Rendered HTML:');
-		// console.log(result.outerHTML);
-
-
 		document.body.removeChild(wrapper);
 
 		this.view.unload();
 		return result;
-	}
-
-
-	/** 代码块简化 */
-	private simplifyCodeBlocks(node: HTMLElement) {
-		console.log('Simplifying code blocks2');
-		//  查询所有具有特定样式的 pre 标签，且包含 code 元素
-		const codeBlocks = node.querySelectorAll('pre:has(> code)');
-		// 遍历每个找到的代码块元素
-		codeBlocks.forEach(block => {
-			const codeElement = block.querySelector('code');
-			if (codeElement) {
-				const codeText = codeElement.textContent || codeElement.innerText;
-				const pre = document.createElement('pre');
-				const code = document.createElement('code');
-
-				pre.setAttribute('style',
-					'background: linear-gradient(to bottom, #2a2c33 0%, #383a42 8px, #383a42 100%);' +
-					'padding: 0;' +
-					'border-radius: 6px;' +
-					'overflow: hidden;' +
-					'margin: 24px 0;' +
-					'box-shadow: 0 2px 8px rgba(0,0,0,0.15);'
-				);
-
-				code.setAttribute('style',
-					'color: #abb2bf;' +
-					'font-family: "SF Mono", Consolas, Monaco, "Courier New", monospace;' +
-					'font-size: 14px;' +
-					'line-height: 1.7;' +
-					'display: block;' +
-					'white-space: pre;' +
-					'padding: 16px 20px;' +
-					'-webkit-font-smoothing: antialiased;' +
-					'-moz-osx-font-smoothing: grayscale;'
-				);
-
-				code.textContent = codeText;
-				pre.appendChild(code);
-				block.parentNode!.replaceChild(pre, block);
-			}
-		});
-		console.log('Simplifying code blocks end');
 	}
 
 	/**
@@ -951,7 +902,7 @@ class CopyingToHtmlModal extends Modal {
 }
 
 /**
- * 设置对话框
+ * 设置框配置
  */
 class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 	constructor(app: App, private plugin: CopyDocumentAsHTMLPlugin) {
@@ -1037,8 +988,8 @@ class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Remove properties / front-matter sections')
-			.setDesc("If checked, the YAML content between --- lines at the front of the document are removed. If you don't know what this means, leave it on.")
+			.setName('移除属性/前置元数据部分')
+			.setDesc("如果选中，将移除文档开头位于 --- 行之间的 YAML 内容。如果您不知道这是什么，请保持开启状态。")
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.removeFrontMatter)
 				.onChange(async (value) => {
@@ -1268,6 +1219,7 @@ type CopyDocumentAsHTMLSettings = {
 	disableImageEmbedding: boolean;
 }
 
+// 默认设置值
 const DEFAULT_SETTINGS: CopyDocumentAsHTMLSettings = {
 	removeFrontMatter: true,
 	convertSvgToBitmap: true,
@@ -1480,15 +1432,19 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 			}
 
 			// 根据设置决定生成完整的 HTML 文档还是仅 HTML 片段
-			const htmlDocument1 = this.settings.bareHtmlOnly
+			// 优先使用 const，只有在需要重新赋值时才使用 let
+			let htmlDocument = this.settings.bareHtmlOnly
 				? htmlBody.outerHTML  // 仅 HTML 片段
 				: this.expandHtmlTemplate(htmlBody.outerHTML, title); // 完整的 HTML 文档
 
+			// 简化代码块格式
+			htmlDocument = this.simplifyCodeBlocks(htmlDocument);
+
 			// 处理列表项格式
-			const htmlDocument2 = this.preprocessMarkdownList(htmlDocument1);
+			htmlDocument = this.preprocessMarkdownList(htmlDocument);
 
 			// 应用内联样式
-			const htmlDocument = this.applyInlineStyles(htmlDocument2);
+			htmlDocument = this.applyInlineStyles(htmlDocument);
 
 			// 创建剪贴板项，同时包含 HTML 和纯文本格式
 			const data =
@@ -1514,20 +1470,57 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 	}
 
-	// 预处理 Markdown
-	// const processedContent = this.preprocessMarkdown(this.markdownInput);
+	/** 代码块简化 */
+	private simplifyCodeBlocks(htmlString: string): string {
+		// console.log('Simplifying code blocks start');
+		// console.log(htmlString);
+		
+		// 创建临时DOM元素来处理HTML字符串
+		const tempDiv = document.createElement('div');
+		tempDiv.innerHTML = htmlString;
+		
+		// 查询所有具有特定样式的 pre 标签，且包含 code 元素
+		const codeBlocks = tempDiv.querySelectorAll('pre:has(> code)');
+		// 遍历每个找到的代码块元素
+		codeBlocks.forEach(block => {
+			const codeElement = block.querySelector('code');
+			if (codeElement) {
+				const codeText = codeElement.textContent || codeElement.innerText;
+				const pre = document.createElement('pre');
+				const code = document.createElement('code');
 
-	// // 渲染
-	// let html = this.md.render(processedContent);
+				pre.setAttribute('style',
+					'background: linear-gradient(to bottom, #2a2c33 0%, #383a42 8px, #383a42 100%);' +
+					'padding: 0;' +
+					'border-radius: 6px;' +
+					'overflow: hidden;' +
+					'margin: 24px 0;' +
+					'box-shadow: 0 2px 8px rgba(0,0,0,0.15);'
+				);
 
-	// // 处理 img:// 协议（从 IndexedDB 加载图片）
-	// html = await this.processImageProtocol(html);
+				code.setAttribute('style',
+					'color: #abb2bf;' +
+					'font-family: "SF Mono", Consolas, Monaco, "Courier New", monospace;' +
+					'font-size: 14px;' +
+					'line-height: 1.7;' +
+					'display: block;' +
+					'white-space: pre;' +
+					'padding: 16px 20px;' +
+					'-webkit-font-smoothing: antialiased;' +
+					'-moz-osx-font-smoothing: grayscale;'
+				);
 
-	// // 应用样式
-	// html = this.applyInlineStyles(html);
+				code.textContent = codeText;
+				pre.appendChild(code);
+				block.parentNode!.replaceChild(pre, block);
+			}
+		});
+		
+		console.log('Simplifying code blocks end');
+		// 返回处理后的HTML字符串
+		return tempDiv.innerHTML;
+	}
 
-	// this.renderedContent = html;
-	// },
 
 	private preprocessMarkdownList(content: string) {
 		// 规范化列表项格式
