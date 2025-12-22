@@ -3,7 +3,7 @@
 	"name": "copy-to-mp",
 	"version": "1.1.0",
 	"minAppVersion": "1.6.3",
-	"description": "将当前文档复制到微信公众号，包括图片、图表等。",
+	"description": "Copy the current document to a WeChat Official Account article, including images, charts, and other embedded content.",
 	"author": "feiyu",
 	"authorUrl": "https://github.com/Spute",
 	"isDesktopOnly": true
