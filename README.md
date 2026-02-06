@@ -40,7 +40,9 @@
 目前只支持本地安装（提交obsidian官方还未审核通过，无法在线安装）。
 
 安装方法可参考我的教程：
-[Obsidian 进阶教程：插件安装](https://blog.520233.best/Obsidian-%E8%BF%9B%E9%98%B6%E6%95%99%E7%A8%8B%EF%BC%9A%E6%8F%92%E4%BB%B6%E5%AE%89%E8%A3%85)
+- [B站介绍视频（包含安装步骤）](https://www.bilibili.com/video/BV1W4iuBpEWv/#reply115814850106975)
+
+- [Obsidian 进阶教程：插件安装](https://blog.520233.best/Obsidian-%E8%BF%9B%E9%98%B6%E6%95%99%E7%A8%8B%EF%BC%9A%E6%8F%92%E4%BB%B6%E5%AE%89%E8%A3%85)
 
 发现问题可在 Issue 中反馈。
 
