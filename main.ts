@@ -1532,35 +1532,11 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 	}
 
 	private preprocessMarkdownList(content: string) {
-		// 规范化列表项格式
+		// 规范化列表项格式，将冒号分隔的文本、换行的续行文本合并到同一行
 		content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+[^:\n]+)\n\s*:\s*(.+?)$/gm, '$1: $2');
 		content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+.+?:)\s*\n\s+(.+?)$/gm, '$1 $2');
 		content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+[^:\n]+)\n:\s*(.+?)$/gm, '$1: $2');
 		content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+.+?)\n\n\s+(.+?)$/gm, '$1 $2');
-
-		// // 处理包含<strong>标签的<li>元素，将其他文本包裹在<span>标签中
-		// content = content.replace(/<li([^>]*)>(.*?<strong[^>]*>.*?<\/strong>.*?)<\/li>/g, (match, attrs, innerContent) => {
-		// 	// 检查是否已经包含<span>标签
-		// 	if (!innerContent.includes('<span')) {
-		// 		// 提取<strong>标签及其内容
-		// 		const strongRegex = /(<strong[^>]*>.*?<\/strong>)/g;
-		// 		const parts = innerContent.split(strongRegex);
-
-		// 		// 包裹非<strong>部分的文本
-		// 		const wrappedContent = parts.map((part: string) => {
-		// 			if (part.match(strongRegex)) {
-		// 				return part; // 已经是<strong>标签的部分保持不变
-		// 			} else if (part.trim() !== '') {
-		// 				return `<span>${part}</span>`; // 其他文本部分包裹在<span>标签中
-		// 			}
-		// 			return part; // 空白部分保持不变
-		// 		}).join('');
-
-		// 		return `<li${attrs}>${wrappedContent}</li>`;
-		// 	}
-		// 	return match; // 如果已经包含<span>标签，则保持原样
-		// });
-
 		return content;
 	}
 
@@ -1592,9 +1568,20 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 				}
 
 				const currentStyle = el.getAttribute('style') || '';
-				// 添加类型断言，确保 TypeScript 知道 selector 是 style 对象的有效键
-				el.setAttribute('style', currentStyle + '; ' + style[selector as keyof typeof style]);
-			});
+				if (el.tagName === 'LI') {
+					// 列表带有 <strong> 标签时，要在整体包裹 <p> 标签，否则公众号会为非strong 内容添加 section 块标签
+					// 列表项内部添加p标签
+					const p = document.createElement('p');
+					p.innerHTML = el.innerHTML;
+					el.innerHTML = '';
+					el.appendChild(p);
+					// 列表项添加样式
+					el.setAttribute('style', currentStyle + '; ' + style["li"]);
+				} else {
+					// 添加类型断言，确保 TypeScript 知道 selector 是 style 对象的有效键
+					el.setAttribute('style', currentStyle + '; ' + style[selector as keyof typeof style]);
+				}
+				});
 		});
 
 		const container = doc.createElement('div');

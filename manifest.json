@@ -1,7 +1,7 @@
 {
 	"id": "copy-document-to-mp",
 	"name": "copy-to-mp",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"minAppVersion": "1.6.3",
 	"description": "Copy the current document to a WeChat Official Account article, including images, charts, and other embedded content.",
 	"author": "feiyu",
