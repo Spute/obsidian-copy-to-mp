@@ -16,6 +16,7 @@ import {
 
 // 导入样式配置
 import { STYLES } from './styles_temp.js';
+import { CODE_HIGHLIGHT_STYLES } from './code_style.js';
 import hljs from 'highlight.js';
 
 /*
@@ -384,6 +385,16 @@ enum FootnoteHandling {
 
 	/** 将脚注移动到 title 属性中（暂不支持） */
 	TITLE_ATTRIBUTE
+}
+
+
+/**
+ * 代码高亮样式枚举
+ */
+enum CodeHighlightStyle {
+	VS2015 = "vs2015",
+	ATOM_ONE_DARK = "atom-one-dark",
+	GITHUB = "github",
 }
 
 
@@ -1144,7 +1155,31 @@ class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 		});
-		
+
+		// 代码高亮样式选项映射
+		const codeHighlightOptions: Record<string, CodeHighlightStyle> = {
+			'VS2015': CodeHighlightStyle.VS2015,
+			'Atom One Dark': CodeHighlightStyle.ATOM_ONE_DARK,
+			'GitHub': CodeHighlightStyle.GITHUB,
+		};
+
+		// 添加代码高亮样式设置
+		new Setting(containerEl)
+			.setName('代码高亮样式')
+			.setDesc('选择代码块的语法高亮样式。')
+			.addDropdown(dropdown => {
+				Object.entries(codeHighlightOptions).forEach(([label, value]) => {
+					dropdown.addOption(value, label);
+				});
+
+				dropdown
+					.setValue(this.plugin.settings.codeHighlightStyle)
+					.onChange(async (value) => {
+						this.plugin.settings.codeHighlightStyle = value as CodeHighlightStyle;
+						await this.plugin.saveSettings();
+					});
+			});
+
 		new Setting(containerEl)
 			.setName('内部链接处理')
 			.setDesc(CopyDocumentAsHTMLSettingsTab.createFragmentWithHTML(`
@@ -1318,6 +1353,9 @@ type CopyDocumentAsHTMLSettings = {
 	/** 样式风格，默认值为 wechat-default */
 	styleSheetStyle: StyleSheetStyle;
 
+	/** 代码高亮样式，默认值为 vs2015 */
+	codeHighlightStyle: CodeHighlightStyle;
+
 	/**
 	 * 是否禁用图片嵌入（不推荐，会留下损坏的链接）
 	 */
@@ -1342,6 +1380,7 @@ const DEFAULT_SETTINGS: CopyDocumentAsHTMLSettings = {
 	fileNameAsHeader: false,
 	disableImageEmbedding: false,
 	styleSheetStyle: StyleSheetStyle.WECHAT_DEFAULT,
+	codeHighlightStyle: CodeHighlightStyle.VS2015,
 }
 
 /**
@@ -1612,8 +1651,11 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		const tempDiv = document.createElement('div');
 		tempDiv.innerHTML = htmlString;
 
+		// 根据配置获取对应的代码高亮样式
+		const highlightStyleConfig = CODE_HIGHLIGHT_STYLES[this.settings.codeHighlightStyle] || CODE_HIGHLIGHT_STYLES['vs2015'];
+		const highlightStyleCss = highlightStyleConfig.styles;
 		// 解析 highlight.js 样式
-		const styleMap = this.parseHighlightStyles(HIGHLIGHT_JS_STYLES);
+		const styleMap = this.parseHighlightStyles(highlightStyleCss);
 		console.log('[applyHighlightInlineStyles] 解析到的样式类数量:', styleMap.size);
 
 		// 只查找 pre 元素内部的带有 hljs class 的元素（排除行内 code）
