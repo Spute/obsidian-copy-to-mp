@@ -25,6 +25,7 @@
 	},
 	"dependencies": {
 		"@codemirror/state": "^6.2.1",
-		"@codemirror/view": "^6.18.1"
+		"@codemirror/view": "^6.18.1",
+		"highlight.js": "^11.9.0"
 	}
 }

@@ -16,6 +16,7 @@ import {
 
 // 导入样式配置
 import { STYLES } from './styles_temp.js';
+import hljs from 'highlight.js';
 
 /*
  * 通用库函数
@@ -253,6 +254,7 @@ const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html>
   <meta charset="utf-8">
   <title>\${title}</title>
   <style>
+    \${HIGHLIGHT_JS_STYLES}
     \${MERMAID_STYLESHEET}
     \${stylesheet}
   </style>
@@ -261,6 +263,95 @@ const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html>
 \${body}
 </body>
 </html>
+`;
+
+// highlight.js VS2015 暗色主题样式
+const HIGHLIGHT_JS_STYLES = `
+.hljs {
+  background: #1e1e1e;
+  color: #dcdcdc
+}
+.hljs-keyword,
+.hljs-literal,
+.hljs-name,
+.hljs-symbol {
+  color: #569cd6
+}
+.hljs-link {
+  color: #569cd6;
+  text-decoration: underline
+}
+.hljs-built_in,
+.hljs-type {
+  color: #4ec9b0
+}
+.hljs-class,
+.hljs-number {
+  color: #b8d7a3
+}
+.hljs-meta .hljs-string,
+.hljs-string {
+  color: #d69d85
+}
+.hljs-regexp,
+.hljs-template-tag {
+  color: #9a5334
+}
+.hljs-formula,
+.hljs-function,
+.hljs-params,
+.hljs-subst,
+.hljs-title {
+  color: #dcdcdc
+}
+.hljs-comment,
+.hljs-quote {
+  color: #57a64a;
+  font-style: italic
+}
+.hljs-doctag {
+  color: #608b4e
+}
+.hljs-meta,
+.hljs-meta .hljs-keyword,
+.hljs-tag {
+  color: #9b9b9b
+}
+.hljs-template-variable,
+.hljs-variable {
+  color: #bd63c5
+}
+.hljs-attr,
+.hljs-attribute {
+  color: #9cdcfe
+}
+.hljs-section {
+  color: gold
+}
+.hljs-emphasis {
+  font-style: italic
+}
+.hljs-strong {
+  font-weight: 700
+}
+.hljs-bullet,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-selector-pseudo,
+.hljs-selector-tag {
+  color: #d7ba7d
+}
+.hljs-addition {
+  background-color: #144212;
+  display: inline-block;
+  width: 100%
+}
+.hljs-deletion {
+  background-color: #600;
+  display: inline-block;
+  width: 100%
+}
 `;
 
 
@@ -1053,7 +1144,7 @@ class CopyDocumentAsHTMLSettingsTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				});
 		});
-
+		
 		new Setting(containerEl)
 			.setName('内部链接处理')
 			.setDesc(CopyDocumentAsHTMLSettingsTab.createFragmentWithHTML(`
@@ -1483,52 +1574,185 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 	}
 
-	/** 代码块简化 */
+	/** 解析 highlight.js CSS 样式为 class -> inline style 映射 */
+	private parseHighlightStyles(css: string): Map<string, string> {
+		const styleMap = new Map<string, string>();
+		// 匹配完整的 CSS 规则：selectors { styles }
+		// 先匹配整个规则块，然后从中提取所有选择器
+		const ruleRegex = /([^{}]+)\{([^}]+)\}/g;
+		let match;
+		while ((match = ruleRegex.exec(css)) !== null) {
+			const selectorsStr = match[1].trim();
+			const styles = match[2].trim();
+
+			// 分割多个选择器（逗号分隔）
+			const selectors = selectorsStr.split(',').map(s => s.trim());
+
+			for (const selector of selectors) {
+				// 只处理以 .hljs- 开头的类选择器
+				if (selector.startsWith('.hljs-')) {
+					// 去掉前导点，可能后面还有 .class_ 等
+					let className = selector.substring(1);
+					// 只取第一个 hljs- 开头的类名
+					const hljsMatch = className.match(/hljs-[a-zA-Z0-9_]+/);
+					if (hljsMatch) {
+						styleMap.set(hljsMatch[0], styles);
+					}
+				}
+			}
+		}
+		console.log('[parseHighlightStyles] 解析到的样式类:', Array.from(styleMap.keys()).join(', '));
+		return styleMap;
+	}
+
+	/** 将 highlight.js 的 class 样式转换为内联样式 */
+	private applyHighlightInlineStyles(htmlString: string): string {
+		console.log('[applyHighlightInlineStyles] 输入 HTML 长度:', htmlString.length);
+
+		const tempDiv = document.createElement('div');
+		tempDiv.innerHTML = htmlString;
+
+		// 解析 highlight.js 样式
+		const styleMap = this.parseHighlightStyles(HIGHLIGHT_JS_STYLES);
+		console.log('[applyHighlightInlineStyles] 解析到的样式类数量:', styleMap.size);
+
+		// 只查找 pre 元素内部的带有 hljs class 的元素（排除行内 code）
+		const preElements = tempDiv.querySelectorAll('pre');
+		let hljsCount = 0;
+		preElements.forEach(pre => {
+			const highlightedElements = pre.querySelectorAll('[class*="hljs-"]');
+			hljsCount += highlightedElements.length;
+			highlightedElements.forEach(el => {
+				const classList = el.className.split(' ');
+				let inlineStyle = el.getAttribute('style') || '';
+
+				for (const cls of classList) {
+					if (styleMap.has(cls)) {
+						// 只有当内联样式中没有相同属性时才添加
+						const newStyles = styleMap.get(cls)!;
+						if (inlineStyle && !inlineStyle.endsWith(';')) {
+							inlineStyle += '; ' + newStyles;
+						} else {
+							inlineStyle += newStyles;
+						}
+					}
+				}
+
+				if (inlineStyle) {
+					el.setAttribute('style', inlineStyle);
+				}
+			});
+		});
+		console.log('[applyHighlightInlineStyles] 找到 pre 内的 hljs 元素数量:', hljsCount);
+
+		return tempDiv.innerHTML;
+	}
+
+	/** 将空格转换为 nbsp 以保持代码缩进（公众号限制） */
+	private convertSpacesToNbsp(html: string): string {
+		// 使用正则表达式直接替换，更彻底
+		// 1. 替换所有空格为 &nbsp;
+		// 2. 保留 HTML 标签内的空格不变
+		let result = '';
+
+		// 解析 HTML 标签，将标签内空格保留，标签外空格替换
+		let i = 0;
+		while (i < html.length) {
+			if (html[i] === '<') {
+				// 找到标签结束位置
+				let j = html.indexOf('>', i);
+				if (j === -1) j = html.length;
+				// 保留整个标签
+				result += html.substring(i, j + 1);
+				i = j + 1;
+			} else {
+				// 处理标签外的文本，将空格替换为 &nbsp;
+				let text = '';
+				while (i < html.length && html[i] !== '<') {
+					if (html[i] === ' ') {
+						text += '&nbsp;';
+					} else {
+						text += html[i];
+					}
+					i++;
+				}
+				result += text;
+			}
+		}
+
+		return result;
+	}
+
+	/** 代码块语法高亮 + 简化 */
 	private simplifyCodeBlocks(htmlString: string): string {
+		console.log('[simplifyCodeBlocks] 原始 HTML 长度:', htmlString.length);
 
 		// 创建临时DOM元素来处理HTML字符串
 		const tempDiv = document.createElement('div');
 		tempDiv.innerHTML = htmlString;
 
+		
+		
+		const codeStyle = 'overflow-x: auto;padding: 16px;color: #abb2bf;padding-top: 15px;background: #282c34;border-radius: 5px;display: -webkit-box;font-family: Consolas, Monaco, Menlo, monospace;font-size: 12px;';
+      	const preStyle = 'border-radius: 5px;box-shadow: rgba(0, 0, 0, 0.55) 0px 2px 10px;text-align: left;margin-top: 10px;margin-bottom: 10px;margin-left: 0px;margin-right: 0px;padding-top: 0px;padding-bottom: 0px;padding-left: 0px;padding-right: 0px;';
+        const inlineCodeStyle = "color: rgb(53, 179, 120); font-size: 14px; line-height: 1.8em; letter-spacing: 0em; background-attachment: scroll; background-clip: border-box; background-color: rgba(27, 31, 35, 0.05); background-image: none; background-origin: padding-box; background-position-x: left; background-position-y: top; background-repeat: no-repeat; background-size: auto; width: auto; height: auto; margin-top: 0px; margin-bottom: 0px; margin-left: 2px; margin-right: 2px; padding-top: 2px; padding-bottom: 2px; padding-left: 4px; padding-right: 4px; border-top-style: none; border-bottom-style: none; border-left-style: none; border-right-style: none; border-top-width: 3px; border-bottom-width: 3px; border-left-width: 3px; border-right-width: 3px; border-top-color: rgb(0, 0, 0); border-bottom-color: rgba(0, 0, 0, 0.4); border-left-color: rgba(0, 0, 0, 0.4); border-right-color: rgba(0, 0, 0, 0.4); border-top-left-radius: 4px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; border-bottom-left-radius: 4px; overflow-wrap: break-word; font-family: 'Operator Mono', Consolas, Monaco, Menlo, monospace; word-break: break-all;";
+		
 		// 查询所有具有特定样式的 pre 标签，且包含 code 元素
 		const codeBlocks = tempDiv.querySelectorAll('pre:has(> code)');
+		console.log('[simplifyCodeBlocks] 找到代码块数量:', codeBlocks.length);
 		// 遍历每个找到的代码块元素
 		codeBlocks.forEach(block => {
 			const codeElement = block.querySelector('code');
 			if (codeElement) {
 				const codeText = codeElement.textContent || codeElement.innerText;
+
+				// 获取编程语言（从 class 中提取，如 language-js -> js）
+				let language = '';
+				const classList = codeElement.className.split(' ');
+				for (const cls of classList) {
+					if (cls.startsWith('language-')) {
+						language = cls.replace('language-', '');
+						break;
+					}
+				}
+
+				// 使用 highlight.js 进行语法高亮
+				let highlightedHtml: string;
+				if (language && hljs.getLanguage(language)) {
+					highlightedHtml = hljs.highlight(codeText, { language }).value;
+				} else {
+					// 无语言标识或不支持的语言，使用自动检测
+					highlightedHtml = hljs.highlightAuto(codeText).value;
+				}
+
 				const pre = document.createElement('pre');
 				const code = document.createElement('code');
 
-				pre.setAttribute('style',
-					'background: linear-gradient(to bottom, #2a2c33 0%, #383a42 8px, #383a42 100%);' +
-					'padding: 0;' +
-					'border-radius: 6px;' +
-					'overflow: hidden;' +
-					'margin: 24px 0;' +
-					'box-shadow: 0 2px 8px rgba(0,0,0,0.15);'
-				);
+				pre.setAttribute('style',preStyle);
+				code.setAttribute('style',codeStyle);
 
-				code.setAttribute('style',
-					'color: #abb2bf;' +
-					'font-family: "SF Mono", Consolas, Monaco, "Courier New", monospace;' +
-					'font-size: 14px;' +
-					'line-height: 1.7;' +
-					'display: block;' +
-					'white-space: pre;' +
-					'padding: 16px 20px;' +
-					'-webkit-font-smoothing: antialiased;' +
-					'-moz-osx-font-smoothing: grayscale;'
-				);
-
-				code.textContent = codeText;
+				// 将空格转换为 nbsp 以保持缩进（公众号限制）
+				const indentedHtml = this.convertSpacesToNbsp(highlightedHtml);
+				// 使用 innerHTML 插入高亮后的 HTML
+				code.innerHTML = indentedHtml;
 				pre.appendChild(code);
 				block.parentNode!.replaceChild(pre, block);
 			}
 		});
 
-		// 返回处理后的HTML字符串
-		return tempDiv.innerHTML;
+		// 将 highlight.js 的 class 样式转换为内联样式
+		let result = this.applyHighlightInlineStyles(tempDiv.innerHTML);
+
+		// 处理行内 code（不在 pre 内部的 code 元素）
+		const tempDiv2 = document.createElement('div');
+		tempDiv2.innerHTML = result;
+		const inlineCodes = tempDiv2.querySelectorAll('code:not(pre > code)');
+		inlineCodes.forEach(code => {
+			code.setAttribute('style', inlineCodeStyle);
+		});
+		result = tempDiv2.innerHTML;
+
+		return result;
 	}
 
 	private preprocessMarkdownList(content: string) {
@@ -1555,7 +1779,7 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		// this.groupConsecutiveImages(doc);
 
 		Object.keys(style).forEach(selector => {
-			if (selector === 'pre' || selector === 'code' || selector === 'pre code') {
+			if (selector === 'pre' || selector === 'code' || selector === 'code') {
 				return;
 			}
 
@@ -1584,8 +1808,10 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 				});
 		});
 
-		const container = doc.createElement('div');
+		const container = doc.createElement('section');
 		container.setAttribute('style', style.container);
+		container.setAttribute('id', 'ob-copy-container');
+
 		container.innerHTML = doc.body.innerHTML;
 
 		return container.outerHTML;
@@ -1609,7 +1835,8 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 			.replace('${title}', title)  // 文档标题
 			.replace('${body}', html)    // HTML 内容
 			.replace('${stylesheet}', this.settings.styleSheet)  // 样式表
-			.replace('${MERMAID_STYLESHEET}', MERMAID_STYLESHEET);  // Mermaid 图表样式
+			.replace('${MERMAID_STYLESHEET}', MERMAID_STYLESHEET)  // Mermaid 图表样式
+			.replace('${HIGHLIGHT_JS_STYLES}', HIGHLIGHT_JS_STYLES);  // highlight.js 语法高亮样式
 	}
 
 	/**
