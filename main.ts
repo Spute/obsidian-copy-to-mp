@@ -606,6 +606,11 @@ class DocumentRenderer {
 	private preprocessMarkdown(markdown: string): string {
 		let processed = markdown;
 
+		// 将代码块中的 tab 替换为4个空格
+		processed = processed.replace(/(```[\s\S]*?```)/g, (match) => {
+			return match.replace(/\t/g, '    ');
+		});
+
 		if (this.options.removeDataviewMetadataLines) {
 			processed = processed.replace(/^[^ \t:#`<>][^:#`<>]+::.*$/gm, '');
 		}
@@ -1582,7 +1587,7 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 				: this.expandHtmlTemplate(htmlBody.outerHTML, title); // 完整的 HTML 文档
 
 			// 简化代码块格式
-			htmlDocument = this.simplifyCodeBlocks(htmlDocument);
+			htmlDocument = this.simplifyCodeBlocks(htmlDocument, this.settings.styleSheetStyle);
 
 			// 处理列表项格式
 			htmlDocument = this.preprocessMarkdownList(htmlDocument);
@@ -1689,8 +1694,7 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 
 		return tempDiv.innerHTML;
 	}
-
-	/** 将空格转换为 nbsp 以保持代码缩进（公众号限制） */
+/** 将空格转换为 nbsp 以保持代码缩进（公众号限制） */
 	private convertSpacesToNbsp(html: string): string {
 		// 使用正则表达式直接替换，更彻底
 		// 1. 替换所有空格为 &nbsp;
@@ -1724,21 +1728,20 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 
 		return result;
 	}
-
 	/** 代码块语法高亮 + 简化 */
-	private simplifyCodeBlocks(htmlString: string): string {
+	private simplifyCodeBlocks(htmlString: string, applyStyle: StyleSheetStyle): string {
+		const styleKey = applyStyle as keyof typeof STYLES;
+		const styleObj = STYLES[styleKey];
+		if (!styleObj) {
+			console.warn(`样式 ${styleKey} 不存在，使用默认样式`);
+		}
+
 		console.log('[simplifyCodeBlocks] 原始 HTML 长度:', htmlString.length);
 
 		// 创建临时DOM元素来处理HTML字符串
 		const tempDiv = document.createElement('div');
 		tempDiv.innerHTML = htmlString;
-
-		
-		
-		const codeStyle = 'overflow-x: auto;padding: 16px;color: #abb2bf;padding-top: 15px;background: #282c34;border-radius: 5px;display: -webkit-box;font-family: Consolas, Monaco, Menlo, monospace;font-size: 12px;';
-      	const preStyle = 'border-radius: 5px;box-shadow: rgba(0, 0, 0, 0.55) 0px 2px 10px;text-align: left;margin-top: 10px;margin-bottom: 10px;margin-left: 0px;margin-right: 0px;padding-top: 0px;padding-bottom: 0px;padding-left: 0px;padding-right: 0px;';
-        const inlineCodeStyle = "color: rgb(53, 179, 120); font-size: 14px; line-height: 1.8em; letter-spacing: 0em; background-attachment: scroll; background-clip: border-box; background-color: rgba(27, 31, 35, 0.05); background-image: none; background-origin: padding-box; background-position-x: left; background-position-y: top; background-repeat: no-repeat; background-size: auto; width: auto; height: auto; margin-top: 0px; margin-bottom: 0px; margin-left: 2px; margin-right: 2px; padding-top: 2px; padding-bottom: 2px; padding-left: 4px; padding-right: 4px; border-top-style: none; border-bottom-style: none; border-left-style: none; border-right-style: none; border-top-width: 3px; border-bottom-width: 3px; border-left-width: 3px; border-right-width: 3px; border-top-color: rgb(0, 0, 0); border-bottom-color: rgba(0, 0, 0, 0.4); border-left-color: rgba(0, 0, 0, 0.4); border-right-color: rgba(0, 0, 0, 0.4); border-top-left-radius: 4px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; border-bottom-left-radius: 4px; overflow-wrap: break-word; font-family: 'Operator Mono', Consolas, Monaco, Menlo, monospace; word-break: break-all;";
-		
+	
 		// 查询所有具有特定样式的 pre 标签，且包含 code 元素
 		const codeBlocks = tempDiv.querySelectorAll('pre:has(> code)');
 		console.log('[simplifyCodeBlocks] 找到代码块数量:', codeBlocks.length);
@@ -1770,13 +1773,11 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 				const pre = document.createElement('pre');
 				const code = document.createElement('code');
 
-				pre.setAttribute('style',preStyle);
-				code.setAttribute('style',codeStyle);
+				pre.setAttribute('style',styleObj.styles.pre);
+				code.setAttribute('style',styleObj.styles.code);
 
-				// 将空格转换为 nbsp 以保持缩进（公众号限制）
-				const indentedHtml = this.convertSpacesToNbsp(highlightedHtml);
 				// 使用 innerHTML 插入高亮后的 HTML
-				code.innerHTML = indentedHtml;
+				code.innerHTML = this.convertSpacesToNbsp(highlightedHtml);
 				pre.appendChild(code);
 				block.parentNode!.replaceChild(pre, block);
 			}
@@ -1786,13 +1787,16 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		let result = this.applyHighlightInlineStyles(tempDiv.innerHTML);
 
 		// 处理行内 code（不在 pre 内部的 code 元素）
-		const tempDiv2 = document.createElement('div');
-		tempDiv2.innerHTML = result;
-		const inlineCodes = tempDiv2.querySelectorAll('code:not(pre > code)');
-		inlineCodes.forEach(code => {
-			code.setAttribute('style', inlineCodeStyle);
-		});
-		result = tempDiv2.innerHTML;
+		const inlinecodeStyle = (styleObj.styles as any).inlinecode;
+		if(inlinecodeStyle) {
+			const tempDiv2 = document.createElement('div');
+			tempDiv2.innerHTML = result;
+			const inlineCodes = tempDiv2.querySelectorAll('code:not(pre > code)');
+			inlineCodes.forEach(code => {
+				code.setAttribute('style', inlinecodeStyle);
+			});
+			result = tempDiv2.innerHTML;
+		}
 
 		return result;
 	}
@@ -1847,7 +1851,7 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 					// 添加类型断言，确保 TypeScript 知道 selector 是 style 对象的有效键
 					el.setAttribute('style', currentStyle + '; ' + style[selector as keyof typeof style]);
 				}
-				});
+			});
 		});
 
 		const container = doc.createElement('section');
