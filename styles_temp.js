@@ -143,6 +143,8 @@ export const STYLES = {
       th: 'background-color: #0066cc !important; color: #fff !important; padding: 12px; text-align: left; border: 1px solid #0052a3; font-weight: 600;',
       td: 'padding: 12px; border: 1px solid #e0e0e0; background-color: #fff !important;',
       tr: 'border-bottom: 1px solid #e0e0e0;',
+      class_a: 'color: #0066cc !important;',
+      class_url: 'color: #0066cc !important; font-size: 10px;',
     }
   },
 

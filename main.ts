@@ -1589,6 +1589,9 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 			// 简化代码块格式
 			htmlDocument = this.simplifyCodeBlocks(htmlDocument, this.settings.styleSheetStyle);
 
+			// 处理外部链接
+			htmlDocument = this.processExternalLinks(htmlDocument, this.settings.styleSheetStyle);
+
 			// 处理列表项格式
 			htmlDocument = this.preprocessMarkdownList(htmlDocument);
 
@@ -1799,6 +1802,50 @@ export default class CopyDocumentAsHTMLPlugin extends Plugin {
 		}
 
 		return result;
+	}
+
+	/** 处理外部链接：将非微信的链接转换为 span 并添加样式 */
+	private processExternalLinks(htmlString: string, applyStyle: StyleSheetStyle): string {
+		const tempDiv = document.createElement('div');
+		tempDiv.innerHTML = htmlString;
+
+		const links = tempDiv.querySelectorAll('a');
+		const styleKey = applyStyle as keyof typeof STYLES;
+		const styleObj = STYLES[styleKey];
+		const classAStyle = (styleObj.styles as any).class_a || '';
+		const classUrlStyle = (styleObj.styles as any).class_url || '';
+
+		links.forEach(link => {
+			const href = link.getAttribute('href');
+			if (href && !href.includes('mp.weixin.qq.com')) {
+				// 获取链接文本
+				const text = link.innerHTML;
+				// 使用 ruby 标签实现注音效果
+				const ruby = document.createElement('ruby');
+				// 文字
+				const textSpan = document.createElement('span');
+				textSpan.innerHTML = text;
+				// URL 作为注音
+				const rt = document.createElement('rt');
+				rt.textContent = href;
+
+				ruby.appendChild(textSpan);
+				ruby.appendChild(rt);
+
+				// 添加内联样式
+				if (classAStyle) {
+					ruby.setAttribute('style', classAStyle);
+				}
+				if (classUrlStyle) {
+					rt.setAttribute('style', classUrlStyle);
+				}
+
+				// 替换原来的 a 元素
+				link.parentNode?.replaceChild(ruby, link);
+			}
+		});
+
+		return tempDiv.innerHTML;
 	}
 
 	private preprocessMarkdownList(content: string) {
