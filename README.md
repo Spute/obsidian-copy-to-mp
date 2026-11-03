@@ -129,3 +129,6 @@ WX联系方式，请道明来意，欢迎交流obsidian相关问题。
 * [花生编辑器](https://github.com/alchaincyf/huasheng_editor)
 * [copy-as-html 插件](https://github.com/mvdkwast/obsidian-copy-as-html)
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Spute/obsidian-copy-to-mp&type=date&legend=top-left)](https://star-history.com/#Spute/obsidian-copy-to-mp&type=date)
